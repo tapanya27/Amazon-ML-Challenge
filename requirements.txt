@@ -1,0 +1,7 @@
+# Minimal runtime for hard-neg inference and local eval (pin versions in your venv as needed).
+numpy>=2.0
+pandas>=2.0
+xgboost>=3.0
+PyYAML>=6.0
+rapidfuzz>=3.0
+psutil>=5.9

@@ -1,0 +1,230 @@
+{
+  "note": "ISOLATED hard-neg experiment; production model/index unchanged",
+  "excluded_eval2000": 2000,
+  "n_mine_s1": 4000,
+  "n_val_s1": 1500,
+  "class_balance": {
+    "positives": 13733,
+    "original_negatives": 140412,
+    "hard_negatives": 5266,
+    "hard_neg_ratio_vs_pos": 0.38345590912400784,
+    "hard_neg_by_tag": {
+      "branch": 887,
+      "other_highscore": 2156,
+      "empty_addr_exact_name": 845,
+      "exact_name_wrong_addr": 194,
+      "shared_building": 838,
+      "shared_address": 346
+    },
+    "train_feat_rows": 159411,
+    "train_feat_pos": 13733
+  },
+  "production_val_th0.92": {
+    "macro_f05": 0.6607306680323146,
+    "precision": 0.6929037157976163,
+    "recall": 0.770872567482737,
+    "singleton_accuracy": 0.25,
+    "A": 517,
+    "B": 31,
+    "C": 699,
+    "D": 63,
+    "E": 24,
+    "OK": 166,
+    "top100_recall": 0.78747591522158,
+    "retrieve_recall": 0.7955684007707129,
+    "pred_links": 5874,
+    "tp_links": 4019,
+    "fp_links": 1855,
+    "fp_rate": 0.31579843377596184,
+    "score_true_mean": 0.9917646646499634,
+    "score_true_p50": 0.9998669624328613,
+    "score_sel_fp_mean": 0.988214373588562,
+    "score_sel_fp_p50": 0.9966717958450317,
+    "score_sel_fp_ge_0.99": 0.7180592991913747
+  },
+  "hardneg_val_th0.92": {
+    "macro_f05": 0.8189776435901488,
+    "precision": 0.8832795264998654,
+    "recall": 0.7002502578244104,
+    "singleton_accuracy": 0.8928571428571429,
+    "A": 517,
+    "B": 31,
+    "C": 297,
+    "D": 9,
+    "E": 24,
+    "OK": 622,
+    "top100_recall": 0.78747591522158,
+    "retrieve_recall": 0.7955684007707129,
+    "pred_links": 3785,
+    "tp_links": 3646,
+    "fp_links": 139,
+    "fp_rate": 0.03672391017173052,
+    "score_true_mean": 0.9547532796859741,
+    "score_true_p50": 0.9994223117828369,
+    "score_sel_fp_mean": 0.9633473753929138,
+    "score_sel_fp_p50": 0.9630645513534546,
+    "score_sel_fp_ge_0.99": 0.09352517985611511
+  },
+  "hardneg_val_best_th": {
+    "threshold": 0.9000000000000004,
+    "macro_f05": 0.8211509537954342,
+    "precision": 0.8837410882432069,
+    "recall": 0.7078953120796341,
+    "singleton_accuracy": 0.8928571428571429,
+    "A": 517,
+    "B": 31,
+    "C": 294,
+    "D": 9,
+    "E": 24,
+    "OK": 625,
+    "top100_recall": 0.78747591522158,
+    "retrieve_recall": 0.7955684007707129,
+    "pred_links": 3855,
+    "tp_links": 3685,
+    "fp_links": 170,
+    "fp_rate": 0.04409857328145266,
+    "score_true_mean": 0.9547532796859741,
+    "score_true_p50": 0.9994223117828369,
+    "score_sel_fp_mean": 0.9537565112113953,
+    "score_sel_fp_p50": 0.958918571472168,
+    "score_sel_fp_ge_0.99": 0.07647058823529412
+  },
+  "threshold_curve": [
+    {
+      "th": 0.5,
+      "f05": 0.7625831936169263,
+      "p": 0.806025244372702,
+      "r": 0.7605741637521298
+    },
+    {
+      "th": 0.54,
+      "f05": 0.7732889409490684,
+      "p": 0.8197836160230229,
+      "r": 0.7567942337010134
+    },
+    {
+      "th": 0.5800000000000001,
+      "f05": 0.7785792858404317,
+      "p": 0.826824056749904,
+      "r": 0.7537213590709353
+    },
+    {
+      "th": 0.6200000000000001,
+      "f05": 0.7866524241080166,
+      "p": 0.8358243510256222,
+      "r": 0.7484457671957672
+    },
+    {
+      "th": 0.6600000000000001,
+      "f05": 0.7926092644812218,
+      "p": 0.8441812248485978,
+      "r": 0.7450500515648821
+    },
+    {
+      "th": 0.7000000000000002,
+      "f05": 0.7985278625209903,
+      "p": 0.8520903394314412,
+      "r": 0.7413869832302037
+    },
+    {
+      "th": 0.7400000000000002,
+      "f05": 0.8039191113180779,
+      "p": 0.8583977894359249,
+      "r": 0.7383124271365795
+    },
+    {
+      "th": 0.7800000000000002,
+      "f05": 0.8110792637415525,
+      "p": 0.8642700206259529,
+      "r": 0.7332366491794459
+    },
+    {
+      "th": 0.8200000000000003,
+      "f05": 0.8153376524125175,
+      "p": 0.872076215137656,
+      "r": 0.7260870661824051
+    },
+    {
+      "th": 0.8600000000000003,
+      "f05": 0.8189874271949141,
+      "p": 0.8781751636624519,
+      "r": 0.7195066585956417
+    },
+    {
+      "th": 0.9000000000000004,
+      "f05": 0.8211509537954342,
+      "p": 0.8837410882432069,
+      "r": 0.7078953120796341
+    },
+    {
+      "th": 0.9400000000000004,
+      "f05": 0.8159509340227111,
+      "p": 0.8836679445789616,
+      "r": 0.6881714644426509
+    }
+  ],
+  "pattern_fp_production": {
+    "branch": {
+      "n_selected_fp": 247,
+      "share_of_selected_fp": 0.13315363881401618
+    },
+    "shared_address": {
+      "n_selected_fp": 98,
+      "share_of_selected_fp": 0.052830188679245285
+    },
+    "shared_building": {
+      "n_selected_fp": 314,
+      "share_of_selected_fp": 0.16927223719676548
+    },
+    "exact_name_wrong_addr": {
+      "n_selected_fp": 58,
+      "share_of_selected_fp": 0.031266846361185985
+    },
+    "empty_addr_exact_name": {
+      "n_selected_fp": 322,
+      "share_of_selected_fp": 0.17358490566037735
+    },
+    "other_highscore": {
+      "n_selected_fp": 816,
+      "share_of_selected_fp": 0.4398921832884097
+    },
+    "n_selected_fp_total": 1855
+  },
+  "pattern_fp_hardneg_best": {
+    "branch": {
+      "n_selected_fp": 11,
+      "share_of_selected_fp": 0.06470588235294118
+    },
+    "shared_address": {
+      "n_selected_fp": 11,
+      "share_of_selected_fp": 0.06470588235294118
+    },
+    "shared_building": {
+      "n_selected_fp": 34,
+      "share_of_selected_fp": 0.2
+    },
+    "exact_name_wrong_addr": {
+      "n_selected_fp": 4,
+      "share_of_selected_fp": 0.023529411764705882
+    },
+    "empty_addr_exact_name": {
+      "n_selected_fp": 0,
+      "share_of_selected_fp": 0.0
+    },
+    "other_highscore": {
+      "n_selected_fp": 110,
+      "share_of_selected_fp": 0.6470588235294118
+    },
+    "n_selected_fp_total": 170
+  },
+  "indic_diagnostic": {
+    "val_true_links": 5190,
+    "true_pairs_scored_in_top100": 4087,
+    "script_mismatch_in_scored_true": 207,
+    "zero_name_sim_in_scored_true": 0,
+    "script_mismatch_and_zero_name_sim": 0,
+    "frac_scored_true_script_and_zero_name": 0.0
+  },
+  "elapsed_s": 185.6574074999662,
+  "model_path": "models/exp_hardneg/xgb_hardneg.json"
+}

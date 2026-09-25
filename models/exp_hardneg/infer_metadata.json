@@ -1,0 +1,33 @@
+{
+  "best_threshold": 0.90,
+  "feature_cols": [
+    "name_exact",
+    "name_levenshtein",
+    "name_token_sort",
+    "name_token_set",
+    "name_jaccard",
+    "name_overlap",
+    "name_ngram_sim",
+    "name_first_token",
+    "name_len_diff",
+    "name_len_ratio",
+    "addr_exact",
+    "addr_levenshtein",
+    "addr_token_set",
+    "addr_jaccard",
+    "addr_overlap",
+    "addr_ngram_sim",
+    "addr_len_diff",
+    "addr_len_ratio",
+    "addr_num_overlap",
+    "addr_num_ratio",
+    "addr_num_conflict",
+    "country_same",
+    "total_jaccard",
+    "total_overlap",
+    "name_addr_prod",
+    "token_sort_prod",
+    "composite_score"
+  ],
+  "note": "Isolated inference metadata for hard-neg model; production model_metadata.json unchanged"
+}

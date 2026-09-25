@@ -1,0 +1,251 @@
+# Business Entity Resolution Pipeline Configuration
+
+# ==========================================
+# DATA PATHS
+# ==========================================
+data:
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  features_dir: "data/features"
+  
+  train:
+    source1: "dataset/train/train_source1.tsv"
+    source2: "dataset/train/train_source2.tsv"
+    source3: "dataset/train/train_source3.tsv"
+    ground_truth: "dataset/train/train_ground_truth.tsv"
+  
+  test:
+    source1: "dataset/test/test_source1.tsv"
+    source2: "dataset/test/test_source2.tsv"
+    source3: "dataset/test/test_source3.tsv"
+
+# ==========================================
+# PREPROCESSING
+# ==========================================
+preprocessing:
+  # Legal suffixes to normalize (maps variations to canonical form)
+  legal_suffixes:
+    - ["limited", "ltd"]
+    - ["incorporated", "inc"]
+    - ["corporation", "corp"]
+    - ["company", "co"]
+    - ["private", "pvt"]
+    - ["associates", "assoc"]
+    - ["international", "intl"]
+    - ["technologies", "tech"]
+    - ["solutions", "soln"]
+    - ["enterprises", "ent"]
+    - ["industries", "ind"]
+    - ["manufacturing", "mfg"]
+    - ["services", "svc"]
+    - ["consultants", "consult"]
+    - ["foundation", "fdn"]
+    - ["laboratories", "labs"]
+    - ["management", "mgmt"]
+    - ["development", "dev"]
+    - ["construction", "const"]
+    - ["engineering", "engg"]
+    - ["association", "assn"]
+    
+  # Address abbreviation mappings
+  address_abbreviations:
+    "street": "st"
+    "road": "rd"
+    "avenue": "ave"
+    "boulevard": "blvd"
+    "drive": "dr"
+    "court": "ct"
+    "place": "pl"
+    "lane": "ln"
+    "terrace": "ter"
+    "circle": "cir"
+    "highway": "hwy"
+    "parkway": "pkwy"
+    "apartment": "apt"
+    "suite": "ste"
+    "unit": "unit"
+    "floor": "fl"
+    "building": "bldg"
+    "room": "rm"
+    "department": "dept"
+    "number": "no"
+    "north": "n"
+    "south": "s"
+    "east": "e"
+    "west": "w"
+    "northeast": "ne"
+    "northwest": "nw"
+    "southeast": "se"
+    "southwest": "sw"
+    "mount": "mt"
+    "saint": "st"
+    "fort": "ft"
+    "junction": "jct"
+    "heights": "hts"
+    "village": "vlg"
+    "crossing": "xing"
+    "extension": "ext"
+    "square": "sq"
+    "trail": "trl"
+    "center": "ctr"
+    "point": "pt"
+    "creek": "crk"
+    "ridge": "rdg"
+    "valley": "vly"
+    "meadow": "mdw"
+    "garden": "gdn"
+    "gardens": "gdns"
+    "nagar": "ngr"
+    "colony": "col"
+    "sector": "sec"
+    "phase": "ph"
+    "block": "blk"
+    "market": "mkt"
+    "industrial": "indl"
+    "area": "area"
+    "district": "dist"
+    "township": "twp"
+    "county": "cty"
+
+# ==========================================
+# BLOCKING
+# ==========================================
+blocking:
+  # Country blocking
+  country:
+    enabled: true
+  
+  # Name token blocking
+  name_token:
+    enabled: true
+    min_token_length: 3
+    max_token_frequency_ratio: 0.01  # Skip tokens appearing in > 1% of records
+    stopwords:
+      - "limited"
+      - "ltd"
+      - "company"
+      - "co"
+      - "inc"
+      - "incorporated"
+      - "corp"
+      - "corporation"
+      - "pvt"
+      - "private"
+      - "llc"
+      - "llp"
+      - "the"
+      - "and"
+      - "of"
+      - "for"
+      - "in"
+      - "at"
+      - "dba"
+      - "group"
+  
+  # Address token blocking
+  address_token:
+    enabled: true
+    min_token_length: 2
+    prefer_numeric: true
+    max_token_frequency_ratio: 0.01
+  
+  # Character n-gram blocking
+  ngram:
+    enabled: true
+    n: 3
+    min_overlap: 2
+    top_k: 50
+  
+  # FAISS embedding blocking
+  faiss:
+    enabled: true
+    model_name: "BAAI/bge-m3"
+    fallback_model: "intfloat/multilingual-e5-large"
+    batch_size: 256
+    top_k_name: 30
+    top_k_address: 20
+    top_k_combined: 20
+    use_gpu: true
+    cache_embeddings: true
+    embedding_cache_dir: "data/embeddings_cache"
+
+# ==========================================
+# FEATURES
+# ==========================================
+features:
+  tfidf:
+    max_features: 50000
+    ngram_range: [1, 2]
+    sublinear_tf: true
+  
+  embedding:
+    use_cached: true
+  
+  ngram_similarity:
+    n: 3
+
+# ==========================================
+# MODEL
+# ==========================================
+model:
+  xgboost:
+    n_estimators: 1000
+    max_depth: 7
+    learning_rate: 0.05
+    min_child_weight: 5
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+    scale_pos_weight: 1.0  # Will be computed from data
+    eval_metric: "logloss"
+    early_stopping_rounds: 50
+    random_state: 42
+    tree_method: "hist"  # Use GPU if available: "gpu_hist"
+    n_jobs: -1
+
+# ==========================================
+# DECISION
+# ==========================================
+decision:
+  thresholds_to_test:
+    - 0.50
+    - 0.55
+    - 0.60
+    - 0.65
+    - 0.70
+    - 0.75
+    - 0.80
+    - 0.85
+    - 0.90
+    - 0.95
+  
+  # Entity-level decision parameters
+  entity_decision:
+    min_confidence_gap: 0.1  # Minimum gap between best and next candidate
+    max_matches_per_entity: 20  # Safety limit
+    conservative_mode: true
+
+# ==========================================
+# VALIDATION
+# ==========================================
+validation:
+  train_ratio: 0.8
+  random_state: 42
+  stratify_by_country: true
+
+# ==========================================
+# OUTPUT
+# ==========================================
+output:
+  dir: "outputs"
+  matching_results: "outputs/matching_results.tsv"
+  candidate_pairs: "outputs/candidate_pairs.tsv"
+
+# ==========================================
+# GENERAL
+# ==========================================
+general:
+  random_seed: 42
+  log_level: "INFO"
+  n_jobs: -1

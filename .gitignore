@@ -1,0 +1,73 @@
+# ==========================================
+# Python
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ==========================================
+# IDE / Editor
+# ==========================================
+.vscode/
+.idea/
+
+# ==========================================
+# Environment / Secrets
+# ==========================================
+.env
+.env.*
+!.env.example
+
+# ==========================================
+# Competition datasets
+# ==========================================
+# Do NOT upload the large competition data
+dataset/train/
+dataset/test/
+
+# ==========================================
+# SQLite indexes
+# ==========================================
+# These are ~3 GB each — keep them local
+data/indexes/*.sqlite
+data/indexes/*.sqlite-wal
+data/indexes/*.sqlite-shm
+data/indexes/*.db
+
+# ==========================================
+# Generated evaluation files
+# ==========================================
+eval_train/
+output/*.tsv
+output/*.csv
+output/*.json
+output/*.partial.tsv
+
+# Candidate / temporary files
+candidate_pairs.tsv
+*.tmp
+*.temp
+
+# ==========================================
+# Logs
+# ==========================================
+*.log
+
+# ==========================================
+# OS files
+# ==========================================
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# Jupyter
+# ==========================================
+.ipynb_checkpoints/

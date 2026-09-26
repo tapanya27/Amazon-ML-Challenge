@@ -1,6 +1,7 @@
 """
 Memory-safe full test inference. Isolated runner (does not edit src/pipeline.py).
 Hard-neg model, threshold 0.90, top-k 100, existing test SQLite index.
+Writes matching_results.tsv + candidate_pairs.tsv incrementally with resume support.
 """
 from __future__ import annotations
 
@@ -35,9 +36,12 @@ INDEX_PATH = "data/indexes/test_s2s3.sqlite"
 MODEL_PATH = "models/exp_hardneg/xgb_hardneg.json"
 META_PATH = "models/exp_hardneg/infer_metadata.json"
 S1_PATH = "dataset/test/test_source1.tsv"
-OUT_PATH = os.path.join("output", "matching_results.tsv")
+OUT_MATCH = os.path.join("output", "matching_results.tsv")
+OUT_CAND = os.path.join("output", "candidate_pairs.tsv")
+CHECKPOINT_PATH = os.path.join("output", ".infer_checkpoint.json")
 START_BATCH = 250
 FALLBACK_BATCH = 100
+MIN_BATCH = 50
 
 
 def rss_mb():
@@ -52,6 +56,54 @@ def release(*objs):
     for o in objs:
         del o
     gc.collect()
+
+
+def count_data_rows(path: str) -> int:
+    if not os.path.isfile(path):
+        return 0
+    with open(path, encoding="utf-8") as f:
+        return max(0, sum(1 for _ in f) - 1)
+
+
+def load_resume() -> tuple[int, int, int]:
+    """Return (rows_done, matched_s1, pred_links) if outputs are consistent; else restart."""
+    n_m = count_data_rows(OUT_MATCH)
+    n_c = count_data_rows(OUT_CAND)
+    if n_m == 0 and n_c == 0:
+        return 0, 0, 0
+    if n_m != n_c:
+        logger.warning(
+            "Resume mismatch matching=%d candidate=%d — restarting both outputs from zero",
+            n_m, n_c,
+        )
+        return 0, 0, 0
+    if os.path.isfile(CHECKPOINT_PATH):
+        with open(CHECKPOINT_PATH, encoding="utf-8") as f:
+            ck = json.load(f)
+        if int(ck.get("done", -1)) == n_m:
+            return n_m, int(ck.get("matched", 0)), int(ck.get("links", 0))
+    logger.warning("Checkpoint missing or stale; trusting row count %d only (stats reset)", n_m)
+    return n_m, 0, 0
+
+
+def save_checkpoint(done: int, matched: int, links: int) -> None:
+    with open(CHECKPOINT_PATH, "w", encoding="utf-8") as f:
+        json.dump({"done": done, "matched": matched, "links": links, "ts": time.time()}, f)
+
+
+def iter_s1_chunks(chunksize: int, skip_rows: int):
+    remaining = skip_rows
+    for chunk in pd.read_csv(S1_PATH, sep="\t", chunksize=chunksize):
+        if remaining >= len(chunk):
+            remaining -= len(chunk)
+            del chunk
+            gc.collect()
+            continue
+        if remaining > 0:
+            chunk = chunk.iloc[remaining:].copy()
+            remaining = 0
+        yield chunk
+        del chunk
 
 
 def score_batch(index, feat_gen, model, feature_cols, s1_p, use_fast_path=True):
@@ -91,56 +143,49 @@ def score_batch(index, feat_gen, model, feature_cols, s1_p, use_fast_path=True):
             batch_preds[k] = sorted(v)
         del scores, pred_sets
     stats = (n_zero, n_cap, n_pre, n_exp, premax)
-    lines = []
+    match_lines = []
+    cand_lines = []
     n_matched = n_links = 0
-    for s1_id in s1_ids:
+    for i, s1_id in enumerate(s1_ids):
         m_list = batch_preds.get(s1_id, [])
         if m_list:
             n_matched += 1
             n_links += len(m_list)
-        lines.append(f"{s1_id}\t{','.join(m_list)}\n")
+        match_lines.append(f"{s1_id}\t{','.join(m_list)}\n")
+        cids = [index.entity_id(int(r)) for r in row_lists[i]]
+        cand_lines.append(f"{s1_id}\t{','.join(cids)}\n")
     release(feat_df, row_lists, batch_preds, names, addrs, countries, s1_ids)
-    return lines, n_matched, n_links, stats
+    return match_lines, cand_lines, n_matched, n_links, stats
 
 
-def process_chunk(index, feat_gen, model, feature_cols, raw_chunk, batch_size):
-    s1_p = preprocess_dataframe(raw_chunk, "S1_Inference")
-    out_lines = []
+def score_batch_with_fallback(index, feat_gen, model, feature_cols, s1_p, batch_size: int):
+    sizes = []
+    for s in (batch_size, FALLBACK_BATCH, MIN_BATCH):
+        if s <= batch_size and (not sizes or s < sizes[-1]):
+            sizes.append(s)
+    last_err = None
+    for sz in sizes:
+        try:
+            return _run_sub_batches(index, feat_gen, model, feature_cols, s1_p, sz)
+        except MemoryError as e:
+            last_err = e
+            logger.warning("MemoryError at sub-batch size=%d; gc and retry smaller", sz)
+            gc.collect()
+    raise last_err  # type: ignore[misc]
+
+
+def _run_sub_batches(index, feat_gen, model, feature_cols, s1_p, batch_size: int):
+    n = len(s1_p)
+    i = 0
+    all_m, all_c = [], []
     tot_m = tot_l = 0
     z = c = pre = exp = pmax = 0
-    i = 0
-    n = len(s1_p)
     while i < n:
         j = min(i + batch_size, n)
         sub = s1_p.iloc[i:j]
-        try:
-            lines, nm, nl, st = score_batch(index, feat_gen, model, feature_cols, sub)
-        except MemoryError:
-            if batch_size <= FALLBACK_BATCH:
-                raise
-            logger.warning("MemoryError on sub-batch %d-%d size=%d; retry size=%d", i, j, batch_size, FALLBACK_BATCH)
-            gc.collect()
-            lines, nm, nl, st = [], 0, 0, (0, 0, 0, 0, 0)
-            k = i
-            while k < j:
-                k2 = min(k + FALLBACK_BATCH, j)
-                sl, a, b, st2 = score_batch(index, feat_gen, model, feature_cols, s1_p.iloc[k:k2])
-                lines.extend(sl)
-                nm += a
-                nl += b
-                z += st2[0]
-                c += st2[1]
-                pre += st2[2]
-                exp += st2[3]
-                pmax = max(pmax, st2[4])
-                k = k2
-            out_lines.extend(lines)
-            tot_m += nm
-            tot_l += nl
-            i = j
-            release(sub, lines)
-            continue
-        out_lines.extend(lines)
+        m_lines, c_lines, nm, nl, st = score_batch(index, feat_gen, model, feature_cols, sub)
+        all_m.extend(m_lines)
+        all_c.extend(c_lines)
         tot_m += nm
         tot_l += nl
         z += st[0]
@@ -149,45 +194,76 @@ def process_chunk(index, feat_gen, model, feature_cols, raw_chunk, batch_size):
         exp += st[3]
         pmax = max(pmax, st[4])
         i = j
-        release(sub, lines)
+        release(sub, m_lines, c_lines)
+    return all_m, all_c, tot_m, tot_l, (z, c, pre, exp, pmax)
+
+
+def process_chunk(index, feat_gen, model, feature_cols, raw_chunk, batch_size: int):
+    s1_p = preprocess_dataframe(raw_chunk, "S1_Inference")
+    result = score_batch_with_fallback(index, feat_gen, model, feature_cols, s1_p, batch_size)
     release(s1_p)
-    return out_lines, tot_m, tot_l, (z, c, pre, exp, pmax)
+    return result
+
+
+def open_outputs(resume_rows: int):
+    mode = "a" if resume_rows > 0 else "w"
+    fm = open(OUT_MATCH, mode, encoding="utf-8")
+    fc = open(OUT_CAND, mode, encoding="utf-8")
+    if resume_rows == 0:
+        fm.write("source1_entity_id\tmatched_entity_ids\n")
+        fc.write("source1_entity_id\tcandidate_entity_ids\n")
+        fm.flush()
+        fc.flush()
+    return fm, fc
 
 
 def main():
     assert os.path.isfile(INDEX_PATH), INDEX_PATH
     assert os.path.isfile(MODEL_PATH), MODEL_PATH
     os.makedirs("output", exist_ok=True)
-    with open(META_PATH) as f:
+    with open(META_PATH, encoding="utf-8") as f:
         meta = json.load(f)
     feature_cols = meta["feature_cols"]
     assert float(meta["best_threshold"]) == THRESHOLD
 
     model = xgb.XGBClassifier()
     model.load_model(MODEL_PATH)
-    logger.info("model=%s threshold=%.2f top_k=%d batch=%d rss=%.1f", MODEL_PATH, THRESHOLD, TOP_K, START_BATCH, rss_mb())
     index = SqliteReferenceIndex(INDEX_PATH)
-    logger.info("Reusing index %s rows=%d rss=%.1f", INDEX_PATH, index.n, rss_mb())
     feat_gen = PairFeatureGenerator({})
 
     n_s1 = sum(1 for _ in open(S1_PATH, "rb")) - 1
-    logger.info("test S1 rows=%d; restarting from batch 0", n_s1)
+    resume_rows, matched, links = load_resume()
+    if resume_rows >= n_s1:
+        logger.info("Already complete: %d/%d rows", resume_rows, n_s1)
+    else:
+        logger.info(
+            "model=%s threshold=%.2f top_k=%d batch=%d resume=%d/%d index_rows=%d rss=%.1f",
+            MODEL_PATH, THRESHOLD, TOP_K, START_BATCH, resume_rows, n_s1, index.n, rss_mb(),
+        )
 
     t0 = time.time()
-    done = matched = links = zero = cap = pretot = exptot = pretmax = 0
-    with open(OUT_PATH, "w", encoding="utf-8") as out:
-        out.write("source1_entity_id\tmatched_entity_ids\n")
-        for raw in pd.read_csv(S1_PATH, sep="\t", chunksize=START_BATCH):
+    done = resume_rows
+    zero = cap = pretot = exptot = pretmax = 0
+    fm, fc = open_outputs(resume_rows)
+
+    try:
+        for raw in iter_s1_chunks(START_BATCH, resume_rows):
             try:
-                lines, nm, nl, st = process_chunk(index, feat_gen, model, feature_cols, raw, START_BATCH)
+                m_lines, c_lines, nm, nl, st = process_chunk(
+                    index, feat_gen, model, feature_cols, raw, START_BATCH,
+                )
             except MemoryError:
-                logger.warning("MemoryError on chunk of %d; splitting to %d", START_BATCH, FALLBACK_BATCH)
+                logger.warning("MemoryError on outer chunk; retry chunk with batch=%d", FALLBACK_BATCH)
                 gc.collect()
-                lines, nm, nl, st = process_chunk(index, feat_gen, model, feature_cols, raw, FALLBACK_BATCH)
-            for line in lines:
-                out.write(line)
-            out.flush()
-            n_chunk = len(lines)
+                m_lines, c_lines, nm, nl, st = process_chunk(
+                    index, feat_gen, model, feature_cols, raw, FALLBACK_BATCH,
+                )
+            for ml, cl in zip(m_lines, c_lines):
+                fm.write(ml)
+                fc.write(cl)
+            fm.flush()
+            fc.flush()
+            n_chunk = len(m_lines)
             done += n_chunk
             matched += nm
             links += nl
@@ -196,27 +272,41 @@ def main():
             pretot += st[2]
             exptot += st[3]
             pretmax = max(pretmax, st[4])
-            if done % 5000 < START_BATCH or done == n_chunk:
+            save_checkpoint(done, matched, links)
+            if done % 5000 < START_BATCH or done == resume_rows + n_chunk:
                 elapsed = time.time() - t0
                 logger.info(
                     "progress s1=%d/%d matched=%d links=%d rss=%.1f elapsed=%.0fs (%.1fs/1k)",
-                    done, n_s1, matched, links, rss_mb(), elapsed, elapsed / max(done, 1) * 1000,
+                    done, n_s1, matched, links, rss_mb(), elapsed, elapsed / max(done - resume_rows, 1) * 1000,
                 )
-            release(lines, raw)
+            release(m_lines, c_lines, raw)
+    finally:
+        fm.close()
+        fc.close()
 
+    elapsed = time.time() - t0
     logger.info(
-        "Saved %s n_s1=%d matched=%d links=%d zero_cand=%d cap_hits=%d avg_pre=%.1f max_pre=%d avg_exp=%.1f rss=%.1f",
-        OUT_PATH, done, matched, links, zero, cap, pretot / max(done, 1), pretmax, exptot / max(done, 1), rss_mb(),
+        "Saved %s and %s n_s1=%d matched=%d links=%d zero_cand=%d cap_hits=%d avg_pre=%.1f max_pre=%d avg_exp=%.1f rss=%.1f elapsed=%.0fs",
+        OUT_MATCH, OUT_CAND, done, matched, links, zero, cap,
+        pretot / max(done - resume_rows, 1), pretmax, exptot / max(done - resume_rows, 1), rss_mb(), elapsed,
     )
-    out_ids = pd.read_csv(OUT_PATH, sep="\t", usecols=["source1_entity_id"])
+
+    out_ids = pd.read_csv(OUT_MATCH, sep="\t", usecols=["source1_entity_id"])
+    cand_ids = pd.read_csv(OUT_CAND, sep="\t", usecols=["source1_entity_id"])
     src_ids = pd.read_csv(S1_PATH, sep="\t", usecols=["entity_id"])
     missing = set(src_ids["entity_id"]) - set(out_ids["source1_entity_id"])
     extra = set(out_ids["source1_entity_id"]) - set(src_ids["entity_id"])
     dups = int(out_ids["source1_entity_id"].duplicated().sum())
-    logger.info("verify n_out=%d n_src=%d missing=%d extra=%d dups=%d", len(out_ids), len(src_ids), len(missing), len(extra), dups)
+    logger.info(
+        "verify match=%d cand=%d src=%d missing=%d extra=%d dups=%d",
+        len(out_ids), len(cand_ids), len(src_ids), len(missing), len(extra), dups,
+    )
+    if len(cand_ids) != len(out_ids):
+        raise SystemExit(f"candidate row count {len(cand_ids)} != matching {len(out_ids)}")
     if missing or extra or dups or len(out_ids) != len(src_ids):
         raise SystemExit(f"output incomplete missing={len(missing)} extra={len(extra)} dups={dups}")
-    print("VERIFY_OK", len(out_ids), "S1", "links", links, "matched_s1", matched)
+    save_checkpoint(done, matched, links)
+    print("VERIFY_OK", len(out_ids), "S1", "links", links, "matched_s1", matched, "elapsed_s", round(elapsed, 1))
 
 
 if __name__ == "__main__":

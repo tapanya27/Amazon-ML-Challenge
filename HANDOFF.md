@@ -4,6 +4,72 @@
 
 ---
 
+## What has been built so far
+
+### Problem
+
+For each **Source 1 (S1)** row in test (~**1.73M** entities), predict a comma-separated list of matching **Source 2 / Source 3** IDs (or leave empty for singletons). The competition scores **macro F₀.₅** (precision-heavy). The final zip also needs `candidate_pairs.tsv`; the leaderboard file is `matching_results.tsv`.
+
+### Pipeline (current best path)
+
+```mermaid
+flowchart LR
+  S1[S1 query row] --> Prep[Normalize name / address / country]
+  Prep --> Idx[SQLite index over all S2+S3]
+  Idx --> Ret[Retrieve up to 350 refs]
+  Ret --> Pre[cheap_prerank → top 100]
+  Pre --> Feat[27 pair features]
+  Feat --> XGB[XGBoost match model]
+  XGB --> Dec[Threshold 0.90 + entity decision]
+  Dec --> Out[matched_entity_ids]
+```
+
+### Components in the repo
+
+| Layer | What it is |
+|-------|------------|
+| **Preprocessing** | `src/preprocessing/` — name, address, country normalization (US, India, France; legal suffixes, abbreviations, Unicode/script). |
+| **Blocking / candidates** | **Streaming SQLite index** (`src/blocking/sqlite_index.py`) over ~10M S2+S3 rows — token postings with caps, no full in-RAM inverted index. |
+| **Prerank** | `retrieve(..., retrieve_cap=350)` then `cheap_prerank(..., top_k=100)` before scoring. |
+| **Features** | `src/features/pair_features.py` — **27** similarity features (RapidFuzz + composites). |
+| **Matcher** | XGBoost: baseline `models/xgb_baseline.json`; **best** `models/exp_hardneg/xgb_hardneg.json` (hard-negative mining via `train_hardneg_exp.py`). |
+| **Decision** | `src/models/decision.py` — threshold + exact name/address/country fast-path. |
+| **Orchestration** | `src/pipeline.py` (general runner); **`run_full_test_infer.py`** (memory-safe test runner for hard-neg config). |
+| **Indexes** | `data/indexes/s2s3.sqlite` (train), `data/indexes/test_s2s3.sqlite` (test) — ~3 GB each, **already built**. |
+| **Tooling** | `utils/validate_submission.py`, `configs/config.yaml`, eval/analysis scripts (`eval_train_full.py`, `run_experiments_2000.py`, threshold sweep, error analysis). |
+| **Earlier experiments** | FAISS / n-gram / token blockers under `src/blocking/` — useful for research; **scale path is SQLite + prerank**. |
+
+### Local quality (not official test score)
+
+| Stage | Macro F₀.₅ / note |
+|-------|-------------------|
+| Original baseline with **35-candidate cap** (unordered truncation) | ~**0.25** — bottleneck was blocking, not XGBoost (`output/evaluation_report.md`). |
+| Ranked blocking + baseline XGB (4k S1 holdout, seed 999) | Up to ~**0.98** @ threshold 0.92 — **different eval split/setup** than hard-neg holdout. |
+| **Hard-neg model**, 1,500 S1 holdout (`models/exp_hardneg/report.json`) | **~0.821 @ 0.90**; precision ~0.88, recall ~0.71; baseline on same slice ~0.66 @ 0.92. |
+| Candidate ceiling on hard-neg val | ~**79%** retrieve / top-100 recall — quality capped by **who enters top 100**, not index build. |
+
+### Done vs not done
+
+**Done**
+
+- Runnable `src/` library (preprocessing, blocking, features, models, decision).
+- Train + test SQLite indexes on disk.
+- Trained hard-neg XGBoost + metadata, threshold sweep, reports.
+- Local validation / experiment artifacts (`eval_train/`, etc.).
+- Memory-aware test inference script (`run_full_test_infer.py`).
+
+**Not done**
+
+- **Full test** `matching_results.tsv` for all ~1.73M S1 rows (`MemoryError` on large batches; partial outputs only).
+- **Competition submission** from complete, validated outputs.
+- **`candidate_pairs.tsv`** aligned with hard-neg full test run (`run_full_test_infer.py` does not write candidates).
+
+### One-line summary
+
+A **SQLite-backed blocking + XGBoost matching stack** with **hard-negative training** (~**0.82 local F₀.₅** on a 1.5k-S1 holdout), **pre-built train/test indexes**, but **full test inference unfinished** — no complete leaderboard-ready file yet.
+
+---
+
 ## 1. Current architecture
 
 End-to-end flow for each Source 1 (S1) test record:
